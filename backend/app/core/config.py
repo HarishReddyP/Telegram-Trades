@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Core
-    DATABASE_URL: str = "postgresql+psycopg://trader:traderpass@db:5432/trades"
+    DATABASE_URL: str = ""  # Must be set via environment variable
     REDIS_URL: str = "redis://redis:6379/0"
     JWT_SECRET: str = "change-me"
     JWT_EXPIRE_MINUTES: int = 1440
