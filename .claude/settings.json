@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(pkill -f \"app.services.telegram_listener\")",
+      "Bash(python3 -m app.services.telegram_listener)",
+      "Bash(pkill -f \"uvicorn app.main\")",
+      "Bash(python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s \"http://localhost:8000/api/alerts?limit=5\")",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/reset)"
+    ]
+  }
+}

@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: traderpass
+      POSTGRES_DB: trades
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trader -d trades"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    depends_on:
+      - api
+      - redis
+    command: celery -A app.workers.celery_app worker -B --loglevel=info
+
+  telegram:
+    build: ./backend
+    env_file: ./backend/.env
+    depends_on:
+      - api
+    # Runs the Telethon listener. Idle until TELEGRAM_SESSION is configured.
+    command: python -m app.services.telegram_listener
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:
