@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import dashboard, trades, alerts, settings as settings_routes, reset
 from app.db.init_db import init_db
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,6 +31,11 @@ app.include_router(alerts.router)
 app.include_router(settings_routes.router)
 app.include_router(reset.router)
 
+# Serve built frontend (if present) under /ui
+static_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if static_dir.exists():
+    app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="ui")
+
 
 @app.on_event("startup")
 def _startup():
@@ -45,4 +52,7 @@ def health():
 
 @app.get("/")
 def root():
-    return {"service": "telegram-trade-system", "docs": "/docs"}
+    payload = {"service": "telegram-trade-system", "docs": "/docs"}
+    if static_dir.exists():
+        payload["dashboard"] = "/ui"
+    return payload
