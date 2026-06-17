@@ -35,6 +35,7 @@ app.include_router(reset.router)
 static_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if static_dir.exists():
     app.mount("/ui", StaticFiles(directory=str(static_dir), html=True), name="ui")
+    logging.info("Serving frontend from %s at /ui", static_dir)
 
 
 @app.on_event("startup")
