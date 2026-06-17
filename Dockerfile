@@ -15,5 +15,5 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 EXPOSE 8000
 
 # Default to web service (FastAPI)
-# Railway will override with start command from Procfile
+# Uses Railway-provided PORT env var, falling back to 8000
 CMD ["bash", "-c", "cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
