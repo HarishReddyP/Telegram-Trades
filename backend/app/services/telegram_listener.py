@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.enums import TradeStatus
@@ -19,6 +22,27 @@ from app.services.analytics import snapshot_account
 from app.services.image_parser import extract_text_from_image
 
 log = logging.getLogger("telegram_listener")
+
+# Only the 2 PM CST "challenge trade" alert is scanned — everything else
+# (off-hours, weekends, other alert types) is ignored entirely.
+ALERT_WINDOW_TZ = ZoneInfo("America/Chicago")
+ALERT_WINDOW_START_HOUR = 14  # 2 PM CST/CDT
+ALERT_WINDOW_END_HOUR = 15    # 3 PM CST/CDT
+_CHALLENGE_TIME_RE = re.compile(r"2\s*pm", re.IGNORECASE)
+
+
+def _within_alert_window(now: datetime) -> bool:
+    if now.weekday() > 4:  # Mon=0 ... Fri=4; Sat/Sun excluded
+        return False
+    return ALERT_WINDOW_START_HOUR <= now.hour < ALERT_WINDOW_END_HOUR
+
+
+def _is_challenge_trade_alert(text: str) -> bool:
+    if not text:
+        return False
+    if not _CHALLENGE_TIME_RE.search(text):
+        return False
+    return "challenge" in text.lower()
 
 
 async def _run():
@@ -52,6 +76,10 @@ async def _run():
 
     @client.on(events.NewMessage(chats=channel_filter))
     async def handler(event):
+        now = datetime.now(ALERT_WINDOW_TZ)
+        if not _within_alert_window(now):
+            return
+
         text = event.message.message or ""
         channel = settings.TELEGRAM_CHANNEL
 
@@ -76,6 +104,10 @@ async def _run():
 
         if not text:
             log.info("message has no parseable text, skipping")
+            return
+
+        if not _is_challenge_trade_alert(text):
+            log.info("message is not a 2pm challenge trade alert, ignoring")
             return
 
         db = SessionLocal()
