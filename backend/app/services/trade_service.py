@@ -94,7 +94,9 @@ def process_message(db: Session, msg: TelegramMessage) -> Optional[Trade]:
 
 
 def _create_entry_trade(db: Session, alert: ParsedAlert) -> Trade:
-    qty = alert.quantity or 1
+    # Alerts often signal multiple contracts (e.g. "2 contracts"), but we only
+    # ever want to take a single contract regardless of what's signaled.
+    qty = 1
     legs_payload = alert.legs or []
     width = pnl_engine.spread_width(legs_payload)
     max_risk = None
