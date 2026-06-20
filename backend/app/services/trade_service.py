@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -360,6 +361,63 @@ def mark_to_market(db: Session, mark_lookup=None):
             trade.position.mark_price = mark
             trade.position.unrealized_pnl = u
     db.commit()
+
+
+# ---- auto-close ---- #
+PROFIT_TARGET_PCT = 0.5
+CLOSE_BEFORE_MARKET_CLOSE_MINUTES = 5
+
+
+def _hit_profit_target(unrealized_pnl: Optional[float], max_risk: Optional[float]) -> bool:
+    return bool(max_risk) and max_risk > 0 and unrealized_pnl is not None \
+        and unrealized_pnl >= PROFIT_TARGET_PCT * max_risk
+
+
+def _is_near_market_close(now: datetime, minutes_before: int = CLOSE_BEFORE_MARKET_CLOSE_MINUTES) -> bool:
+    hh, mm = (int(x) for x in settings.MARKET_CLOSE.split(":"))
+    close_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    secs_to_close = (close_dt - now).total_seconds()
+    return 0 <= secs_to_close <= minutes_before * 60
+
+
+def auto_manage_open_trades(db: Session, mark_lookup=None) -> list[Trade]:
+    """Auto-close any open trade that has hit the 50% profit target, and
+    force-close anything still open within CLOSE_BEFORE_MARKET_CLOSE_MINUTES
+    of market close (regardless of profit)."""
+    mark_to_market(db, mark_lookup)
+
+    now = datetime.now(ZoneInfo(settings.MARKET_TZ))
+    near_close = _is_near_market_close(now)
+
+    closed = []
+    for trade in db.query(Trade).filter(Trade.status == TradeStatus.OPEN).all():
+        if _hit_profit_target(trade.unrealized_pnl, trade.max_risk):
+            reason = (f"Auto-closed: hit {PROFIT_TARGET_PCT * 100:.0f}% profit target "
+                      f"(unrealized {trade.unrealized_pnl:.2f} of max risk {trade.max_risk:.2f}).")
+        elif near_close:
+            reason = (f"Auto-closed: {CLOSE_BEFORE_MARKET_CLOSE_MINUTES}m to market close, "
+                      f"profit target not met.")
+        else:
+            continue
+        mark = trade.position.mark_price if trade.position else trade.entry_price
+        closed.append(_auto_close(db, trade, mark, reason))
+    return closed
+
+
+def _auto_close(db: Session, trade: Trade, exit_price: float, reason: str) -> Trade:
+    trade.exit_price = exit_price
+    trade.status = TradeStatus.PENDING_APPROVAL
+    trade.review_reason = reason
+    db.commit()
+    audit(db, "trade", "auto_close_queued", trade.id, {"reason": reason, "exit_price": exit_price})
+    result = approve_trade(db, trade.id, actor="system")
+    if result.status == TradeStatus.CLOSED:
+        try:
+            from app.services import email_service
+            email_service.notify_exit(db, result)
+        except Exception:  # noqa: BLE001
+            pass
+    return result
 
 
 # ---- account helpers ---- #

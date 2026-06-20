@@ -146,11 +146,33 @@ async def _run():
         finally:
             db.close()
 
+    asyncio.create_task(_auto_close_loop())
+
     await client.start()
     # Warm up the entity cache so Telethon delivers updates from all chats
     await client.get_dialogs()
     log.info("Telegram listener started on %s (filter=%s)", settings.TELEGRAM_CHANNEL, channel_filter)
     await client.run_until_disconnected()
+
+
+async def _auto_close_loop():
+    """Runs the 50%-profit / near-market-close auto-close check on its own
+    cadence. The Celery beat task does this too, but lives here as well so
+    auto-close keeps working even if the worker/Redis stack is down."""
+    from app.services.trade_service import auto_manage_open_trades
+
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                closed = auto_manage_open_trades(db)
+                if closed:
+                    log.info("auto-closed %d trade(s)", len(closed))
+            finally:
+                db.close()
+        except Exception as e:  # noqa: BLE001
+            log.error("auto-close loop failed: %s", e)
+        await asyncio.sleep(60)
 
 
 def run_listener():

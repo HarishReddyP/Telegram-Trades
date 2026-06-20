@@ -42,11 +42,11 @@ celery_app.conf.beat_schedule = {
 
 @celery_app.task
 def mark_to_market_task():
-    from app.services.trade_service import mark_to_market
+    from app.services.trade_service import auto_manage_open_trades
     db = SessionLocal()
     try:
-        mark_to_market(db)  # no live quote feed in paper mode → flat marks
-        log.info("mark-to-market done at %s", datetime.utcnow())
+        closed = auto_manage_open_trades(db)  # no live quote feed in paper mode → flat marks
+        log.info("mark-to-market done at %s (auto-closed %d)", datetime.utcnow(), len(closed))
     finally:
         db.close()
 
