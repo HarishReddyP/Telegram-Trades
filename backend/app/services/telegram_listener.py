@@ -23,8 +23,9 @@ from app.services.image_parser import extract_text_from_image
 
 log = logging.getLogger("telegram_listener")
 
-# Only the 2 PM CST "challenge trade" alert is scanned — everything else
-# (off-hours, weekends, other alert types) is ignored entirely.
+# Only the 2 PM CST alert is scanned — everything else (off-hours, weekends,
+# other alert types) is ignored entirely. Matching is on "2pm"/"2 pm" mention
+# alone; the word "challenge" is not required.
 ALERT_WINDOW_TZ = ZoneInfo("America/Chicago")
 ALERT_WINDOW_START_HOUR = 14  # 2 PM CST/CDT
 ALERT_WINDOW_END_HOUR = 15    # 3 PM CST/CDT
@@ -40,9 +41,7 @@ def _within_alert_window(now: datetime) -> bool:
 def _is_challenge_trade_alert(text: str) -> bool:
     if not text:
         return False
-    if not _CHALLENGE_TIME_RE.search(text):
-        return False
-    return "challenge" in text.lower()
+    return bool(_CHALLENGE_TIME_RE.search(text))
 
 
 async def _run():
@@ -107,9 +106,10 @@ async def _run():
             return
 
         if not _is_challenge_trade_alert(text):
-            log.info("message is not a 2pm challenge trade alert, ignoring")
+            log.info("message is not a 2pm challenge trade alert, ignoring. text=%r", text[:300])
             return
 
+        log.info("2pm challenge trade alert matched, processing. text=%r", text[:300])
         db = SessionLocal()
         try:
             if is_duplicate(db, channel, text):
